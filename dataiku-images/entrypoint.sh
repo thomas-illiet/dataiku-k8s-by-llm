@@ -6,6 +6,8 @@ set -euo pipefail
 : "${DSS_DATADIR:=/dataiku/dss}"
 : "${DSS_PORT:=10000}"
 : "${DATAIKU_NODE_TYPE:=design}"
+: "${INSTALL_R_INTEGRATION:=false}"
+: "${INSTALL_GRAPHICS_EXPORT:=false}"
 
 LICENSE_ARGS=()
 if [[ -n "${DSS_LICENSE_FILE:-}" && -s "${DSS_LICENSE_FILE}" ]]; then
@@ -30,10 +32,7 @@ install_or_upgrade() {
   if [[ ! -f "${DSS_DATADIR}/bin/env-default.sh" ]]; then
     echo "Initializing Dataiku ${DATAIKU_NODE_TYPE} DATA_DIR at ${DSS_DATADIR}"
     "${DSS_INSTALLDIR}/installer.sh" "${NODE_ARGS[@]}" -d "${DSS_DATADIR}" -p "${DSS_PORT}" "${LICENSE_ARGS[@]}"
-    if [[ -x "${DSS_DATADIR}/bin/dssadmin" ]]; then
-      "${DSS_DATADIR}/bin/dssadmin" install-R-integration || true
-      "${DSS_DATADIR}/bin/dssadmin" install-graphics-export || true
-    fi
+    install_optional_components
     {
       echo "dku.registration.channel=kubernetes-helm"
       echo "dku.exports.chrome.sandbox=false"
@@ -41,16 +40,33 @@ install_or_upgrade() {
     return
   fi
 
-  # shellcheck disable=SC1091
-  source "${DSS_DATADIR}/bin/env-default.sh"
+  load_dss_env
   if [[ "${DKUINSTALLDIR:-}" != "${DSS_INSTALLDIR}" ]]; then
     echo "Upgrading Dataiku DATA_DIR from ${DKUINSTALLDIR:-unknown} to ${DSS_INSTALLDIR}"
     rm -rf "${DSS_DATADIR}/pyenv"
     "${DSS_INSTALLDIR}/installer.sh" -d "${DSS_DATADIR}" -u -y "${LICENSE_ARGS[@]}"
-    if [[ -x "${DSS_DATADIR}/bin/dssadmin" ]]; then
-      "${DSS_DATADIR}/bin/dssadmin" install-R-integration || true
-      "${DSS_DATADIR}/bin/dssadmin" install-graphics-export || true
-    fi
+    install_optional_components
+  fi
+}
+
+load_dss_env() {
+  set +u
+  # shellcheck disable=SC1091
+  source "${DSS_DATADIR}/bin/env-default.sh"
+  set -u
+}
+
+install_optional_components() {
+  if [[ ! -x "${DSS_DATADIR}/bin/dssadmin" ]]; then
+    return
+  fi
+
+  if [[ "${INSTALL_R_INTEGRATION}" == "true" ]]; then
+    "${DSS_DATADIR}/bin/dssadmin" install-R-integration
+  fi
+
+  if [[ "${INSTALL_GRAPHICS_EXPORT}" == "true" ]]; then
+    "${DSS_DATADIR}/bin/dssadmin" install-graphics-export
   fi
 }
 
@@ -86,4 +102,3 @@ install_or_upgrade
 configure_govern
 
 exec "${DSS_DATADIR}/bin/dss" run
-

@@ -1,0 +1,39 @@
+services:
+  dataiku-dss:
+    image: ${DATAIKU_LOCAL_IMAGE:-local/dataiku-dss:${DSS_VERSION:-13.3.2}}
+    platform: linux/amd64
+    container_name: dataiku-dss-dev
+    user: "1000:1000"
+    read_only: true
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      DSS_VERSION: ${DSS_VERSION:-13.3.2}
+      DSS_DATADIR: /dataiku/dss
+      DSS_PORT: "10000"
+      DATAIKU_NODE_TYPE: design
+      INSTALL_R_INTEGRATION: "false"
+      INSTALL_GRAPHICS_EXPORT: "false"
+    ports:
+      - "${DSS_LOCAL_PORT:-10000}:10000"
+    volumes:
+      - dataiku-dss-data:/dataiku/dss
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=${DSS_TMP_SIZE:-2g},mode=1777
+      - /var/tmp:rw,nosuid,nodev,size=${DSS_VAR_TMP_SIZE:-1g},mode=1777
+      - /run:rw,nosuid,nodev,size=${DSS_RUN_TMP_SIZE:-256m},uid=1000,gid=1000,mode=0755
+      - /home/dataiku:rw,nosuid,nodev,size=${DSS_HOME_TMP_SIZE:-1g},uid=1000,gid=1000,mode=0700
+    shm_size: 2gb
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+      nproc:
+        soft: 65536
+        hard: 65536
+
+volumes:
+  dataiku-dss-data:

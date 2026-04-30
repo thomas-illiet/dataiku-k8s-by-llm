@@ -1,0 +1,5 @@
+.git
+.github
+*.md
+*.sbom.json
+*.sarif

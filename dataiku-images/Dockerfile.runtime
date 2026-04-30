@@ -16,8 +16,9 @@ ENV DSS_VERSION="${DSS_VERSION}" \
 RUN test -n "${DSS_VERSION}"
 
 RUN dnf -y install dnf-plugins-core epel-release \
+    && dnf config-manager --set-enabled crb \
     && dnf -y update \
-    && dnf -y install \
+    && dnf -y install --allowerasing \
       acl \
       alsa-lib \
       curl \
@@ -83,10 +84,12 @@ RUN tar -xzf /tmp/dataiku-dss.tar.gz -C /opt/dataiku \
 COPY entrypoint.sh /opt/dataiku/entrypoint.sh
 RUN chmod 0755 /opt/dataiku/entrypoint.sh
 
-USER dataiku
+ENV HOME="/home/dataiku" \
+    TMPDIR="/tmp"
+
+USER 1000:1000
 WORKDIR /home/dataiku
 
 EXPOSE 10000 10001 10002 10003 10004 10005 10006 10007 10008 10009 10010
 
 ENTRYPOINT ["/opt/dataiku/entrypoint.sh"]
-
