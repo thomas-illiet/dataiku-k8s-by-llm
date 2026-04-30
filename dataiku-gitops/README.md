@@ -54,3 +54,15 @@ kubectl apply -f argocd/root/onprem-prod.yaml
 This deployment is intentionally outside Dataiku's standard supported
 installation path. Validate with Dataiku before production use.
 
+## Tests
+
+Use the root test harness from the workspace:
+
+```bash
+make test-static
+make test-help
+make test-render
+```
+
+The complete validation matrix is documented in
+`dataiku-gitops/docs/TESTING.md`.
