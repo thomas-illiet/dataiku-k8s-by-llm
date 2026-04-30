@@ -22,6 +22,37 @@ builder:
   remoteHost: ""
   dockerConfigSecretName: dataiku-registry-dockerconfig
 
+security:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  fsGroupChangePolicy: OnRootMismatch
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  seccompProfile: RuntimeDefault
+  capabilities:
+    drop:
+      - ALL
+  tmpfs:
+    enabled: true
+    mounts:
+      - name: tmp
+        mountPath: /tmp
+        sizeLimit: 2Gi
+      - name: var-tmp
+        mountPath: /var/tmp
+        sizeLimit: 1Gi
+      - name: run
+        mountPath: /run
+        sizeLimit: 256Mi
+      - name: home
+        mountPath: /home/dataiku
+        sizeLimit: 1Gi
+
+optionalComponents:
+  installRIntegration: false
+  installGraphicsExport: false
+
 vault:
   enabled: true
   secretStore: vault-dataiku-prod
@@ -190,4 +221,3 @@ nodes:
       postgresSecretName: dataiku-govern-postgres
       initDb: false
     resources: {}
-

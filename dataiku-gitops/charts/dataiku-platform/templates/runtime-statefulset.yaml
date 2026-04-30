@@ -30,11 +30,22 @@ spec:
         {{- include "dataiku-platform.imagePullSecrets" $ | nindent 8 }}
       {{- end }}
       securityContext:
-        fsGroup: 1000
+        fsGroup: {{ $.Values.security.fsGroup }}
+        fsGroupChangePolicy: {{ $.Values.security.fsGroupChangePolicy | quote }}
       containers:
         - name: dss
           image: {{ $.Values.global.image | quote }}
           imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: {{ $.Values.security.runAsUser }}
+            runAsGroup: {{ $.Values.security.runAsGroup }}
+            readOnlyRootFilesystem: {{ $.Values.security.readOnlyRootFilesystem }}
+            allowPrivilegeEscalation: {{ $.Values.security.allowPrivilegeEscalation }}
+            capabilities:
+              {{- toYaml $.Values.security.capabilities | nindent 14 }}
+            seccompProfile:
+              type: {{ $.Values.security.seccompProfile | quote }}
           env:
             - name: DSS_VERSION
               value: {{ $.Values.global.dssVersion | quote }}
@@ -45,7 +56,11 @@ spec:
             - name: DATAIKU_NODE_TYPE
               value: {{ $node.nodeType | quote }}
             - name: DSS_LICENSE_FILE
-              value: /var/run/secrets/dataiku/license/license.json
+              value: /run/secrets/dataiku/license/license.json
+            - name: INSTALL_R_INTEGRATION
+              value: {{ $.Values.optionalComponents.installRIntegration | quote }}
+            - name: INSTALL_GRAPHICS_EXPORT
+              value: {{ $.Values.optionalComponents.installGraphicsExport | quote }}
             {{- if or (eq $.Values.builder.mode "dind") $.Values.builder.remoteHost }}
             - name: DOCKER_HOST
               value: {{ include "dataiku-platform.dockerHost" $ | trim | quote }}
@@ -97,8 +112,14 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /dataiku/dss
+            {{- if $.Values.security.tmpfs.enabled }}
+            {{- range $.Values.security.tmpfs.mounts }}
+            - name: tmpfs-{{ .name }}
+              mountPath: {{ .mountPath | quote }}
+            {{- end }}
+            {{- end }}
             - name: dataiku-license
-              mountPath: /var/run/secrets/dataiku/license
+              mountPath: /run/secrets/dataiku/license
               readOnly: true
             - name: docker-config
               mountPath: /home/dataiku/.docker
@@ -135,8 +156,17 @@ spec:
             items:
               - key: .dockerconfigjson
                 path: config.json
+        {{- if $.Values.security.tmpfs.enabled }}
+        {{- range $.Values.security.tmpfs.mounts }}
+        - name: tmpfs-{{ .name }}
+          emptyDir:
+            medium: Memory
+            {{- if .sizeLimit }}
+            sizeLimit: {{ .sizeLimit | quote }}
+            {{- end }}
+        {{- end }}
+        {{- end }}
 ---
 {{- end }}
 {{- end }}
 {{- end }}
-

@@ -26,6 +26,37 @@ Production hardening path:
 3. Set `builder.remoteHost=tcp://docker-builder.dataiku.svc:2375`.
 4. Disable privileged sidecars.
 
+## DSS Runtime Pod Hardening
+
+The `dss` container runs rootless and with a read-only root filesystem:
+
+```yaml
+security:
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+```
+
+Only these write paths are mounted:
+
+| Path | Volume | Reason |
+| --- | --- | --- |
+| `/dataiku/dss` | PVC | persistent DSS `DATA_DIR` |
+| `/tmp` | memory `emptyDir` | Java/Python/DSS temp files |
+| `/var/tmp` | memory `emptyDir` | OS temp fallback |
+| `/run` | memory `emptyDir` | runtime sockets and mounted secrets |
+| `/home/dataiku` | memory `emptyDir` | ephemeral user caches and Docker CLI config |
+
+The Dataiku license path is under `/run/secrets/dataiku/license/license.json`
+so it remains compatible with a read-only root filesystem and the `/run` tmpfs.
+The DinD sidecar is not part of this hardened DSS image boundary; for strict
+production hardening, use the remote builder pattern above.
+
 ## RBAC
 
 `rbac.clusterWideWorkloads=true` allows DSS to create workload resources across
@@ -54,4 +85,3 @@ The default policy is intentionally permissive for egress because DSS must reach
 - API endpoints
 
 Restrict egress after the concrete network endpoints are known.
-

@@ -17,6 +17,8 @@ data:
     : "${DSS_PORT:=10000}"
     : "${DATAIKU_NODE_TYPE:=design}"
     : "${DATAIKU_IMAGE_REGISTRY:?DATAIKU_IMAGE_REGISTRY is required}"
+    : "${INSTALL_R_INTEGRATION:=false}"
+    : "${INSTALL_GRAPHICS_EXPORT:=false}"
 
     trap 'touch /work/bootstrap.done 2>/dev/null || true' EXIT
 
@@ -51,8 +53,7 @@ data:
       if [[ ! -f "${DSS_DATADIR}/bin/env-default.sh" ]]; then
         echo "Initializing DATA_DIR at ${DSS_DATADIR}"
         "${DSS_INSTALLDIR}/installer.sh" "${node_args[@]}" -d "${DSS_DATADIR}" -p "${DSS_PORT}" "${license_args[@]}"
-        "${DSS_DATADIR}/bin/dssadmin" install-R-integration || true
-        "${DSS_DATADIR}/bin/dssadmin" install-graphics-export || true
+        install_optional_components
         {
           echo "dku.registration.channel=kubernetes-helm"
           echo "dku.exports.chrome.sandbox=false"
@@ -60,16 +61,35 @@ data:
         return
       fi
 
-      # shellcheck disable=SC1091
-      source "${DSS_DATADIR}/bin/env-default.sh"
+      load_dss_env
       if [[ "${BOOTSTRAP_UPGRADE:-false}" == "true" || "${DKUINSTALLDIR:-}" != "${DSS_INSTALLDIR}" ]]; then
         echo "Upgrading DATA_DIR to ${DSS_INSTALLDIR}"
         rm -rf "${DSS_DATADIR}/pyenv"
         "${DSS_INSTALLDIR}/installer.sh" -d "${DSS_DATADIR}" -u -y "${license_args[@]}"
-        "${DSS_DATADIR}/bin/dssadmin" install-R-integration || true
-        "${DSS_DATADIR}/bin/dssadmin" install-graphics-export || true
+        install_optional_components
       else
         echo "DATA_DIR already initialized for ${DSS_INSTALLDIR}; skipping upgrade"
+      fi
+    }
+
+    load_dss_env() {
+      set +u
+      # shellcheck disable=SC1091
+      source "${DSS_DATADIR}/bin/env-default.sh"
+      set -u
+    }
+
+    install_optional_components() {
+      if [[ ! -x "${DSS_DATADIR}/bin/dssadmin" ]]; then
+        return
+      fi
+
+      if [[ "${INSTALL_R_INTEGRATION}" == "true" ]]; then
+        "${DSS_DATADIR}/bin/dssadmin" install-R-integration
+      fi
+
+      if [[ "${INSTALL_GRAPHICS_EXPORT}" == "true" ]]; then
+        "${DSS_DATADIR}/bin/dssadmin" install-graphics-export
       fi
     }
 
@@ -103,4 +123,3 @@ data:
     echo "${DSS_VERSION}" > "${DSS_DATADIR}/.dataiku-k8s/bootstrap-version"
     echo "Bootstrap complete"
 {{- end }}
-
