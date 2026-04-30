@@ -1,0 +1,58 @@
+name: Build Dataiku Runtime Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      dss_version:
+        description: Dataiku DSS version
+        required: true
+      build_rev:
+        description: Internal build revision
+        required: true
+        default: "1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to internal registry
+        run: |
+          echo "${REGISTRY_PASSWORD}" | docker login "${REGISTRY_HOST}" \
+            --username "${REGISTRY_USERNAME}" --password-stdin
+        env:
+          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Fetch DSS kit
+        run: ./scripts/fetch-kit.sh
+        env:
+          DSS_VERSION: ${{ inputs.dss_version }}
+          DATAIKU_DSS_KIT_URL: ${{ secrets.DATAIKU_DSS_KIT_URL }}
+
+      - name: Build image
+        run: ./scripts/build-runtime.sh
+        env:
+          DSS_VERSION: ${{ inputs.dss_version }}
+          BUILD_REV: ${{ inputs.build_rev }}
+          REGISTRY: ${{ secrets.REGISTRY_HOST }}/dataiku
+
+      - name: Scan image
+        run: ./scripts/scan-image.sh "${REGISTRY}/dss-runtime:${DSS_VERSION}-${BUILD_REV}"
+        env:
+          DSS_VERSION: ${{ inputs.dss_version }}
+          BUILD_REV: ${{ inputs.build_rev }}
+          REGISTRY: ${{ secrets.REGISTRY_HOST }}/dataiku
+
+      - name: Push image
+        run: ./scripts/push-image.sh "${REGISTRY}/dss-runtime:${DSS_VERSION}-${BUILD_REV}"
+        env:
+          DSS_VERSION: ${{ inputs.dss_version }}
+          BUILD_REV: ${{ inputs.build_rev }}
+          REGISTRY: ${{ secrets.REGISTRY_HOST }}/dataiku

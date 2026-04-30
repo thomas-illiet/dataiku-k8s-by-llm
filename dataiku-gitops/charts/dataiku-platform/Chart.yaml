@@ -1,0 +1,7 @@
+apiVersion: v2
+name: dataiku-platform
+description: Dataiku DSS Kubernetes platform chart for GitOps deployment
+type: application
+version: 0.1.0
+appVersion: "14.x"
+

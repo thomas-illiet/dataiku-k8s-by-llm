@@ -1,0 +1,192 @@
+components:
+  prereqs: true
+  bootstrap: false
+  runtime: true
+
+global:
+  image: registry.internal/dataiku/dss-runtime:14.x.y-1
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+  registry: registry.internal/dataiku
+  domain: dataiku.internal
+  storageClass: fast-block-rwo
+  serviceAccountName: dataiku-dss
+  dssVersion: 14.x.y
+  buildRev: "1"
+
+builder:
+  mode: dind
+  image: docker:27-dind
+  privileged: true
+  remoteHost: ""
+  dockerConfigSecretName: dataiku-registry-dockerconfig
+
+vault:
+  enabled: true
+  secretStore: vault-dataiku-prod
+  secretStoreKind: SecretStore
+  server: https://vault.vault.svc:8200
+  path: kv
+  version: v2
+  auth:
+    kubernetes:
+      mountPath: kubernetes
+      role: dataiku-prod
+
+externalSecrets:
+  refreshInterval: 1h
+  items:
+    - name: dataiku-license
+      targetName: dataiku-license
+      remoteKey: kv/dataiku/prod/license
+      data:
+        - secretKey: license.json
+          property: license
+    - name: dataiku-registry-dockerconfig
+      targetName: dataiku-registry-dockerconfig
+      targetType: kubernetes.io/dockerconfigjson
+      remoteKey: kv/dataiku/prod/registry
+      data:
+        - secretKey: .dockerconfigjson
+          property: dockerconfigjson
+    - name: dataiku-govern-postgres
+      targetName: dataiku-govern-postgres
+      remoteKey: kv/dataiku/prod/govern-postgres
+      data:
+        - secretKey: jdbc-url
+          property: jdbc_url
+        - secretKey: user
+          property: user
+        - secretKey: password-encrypted
+          property: password_encrypted
+
+rbac:
+  create: true
+  clusterWideWorkloads: true
+  allowNamespaceManagement: true
+
+networkPolicy:
+  enabled: true
+  ingress:
+    allowAllToDssHttp: true
+  egress:
+    allowAll: true
+
+bootstrap:
+  enabled: true
+  nodeName: design
+  upgrade: false
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 86400
+  activeDeadlineSeconds: 14400
+  buildImages:
+    containerExec: true
+    spark: false
+    cde: false
+    apiDeployer: true
+  imageTags:
+    containerExec: container-exec-base
+    spark: spark-base
+    cde: cde-base
+    apiDeployer: api-deployer-base
+  resources:
+    requests:
+      cpu: "2"
+      memory: 8Gi
+    limits:
+      cpu: "4"
+      memory: 16Gi
+
+nodes:
+  design:
+    enabled: true
+    nodeType: design
+    replicas: 1
+    port: 10000
+    persistence:
+      enabled: true
+      size: 500Gi
+      accessModes:
+        - ReadWriteOnce
+    ingress:
+      enabled: true
+      className: nginx
+      host: dss.dataiku.internal
+      tls:
+        enabled: true
+        secretName: dataiku-dss-tls
+      annotations:
+        nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+        nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    resources:
+      requests:
+        cpu: "4"
+        memory: 16Gi
+      limits:
+        cpu: "8"
+        memory: 32Gi
+
+  automation:
+    enabled: false
+    nodeType: automation
+    replicas: 1
+    port: 10000
+    persistence:
+      enabled: true
+      size: 500Gi
+      accessModes:
+        - ReadWriteOnce
+    ingress:
+      enabled: false
+      className: nginx
+      host: automation.dataiku.internal
+      tls:
+        enabled: true
+        secretName: dataiku-automation-tls
+      annotations: {}
+    resources: {}
+
+  deployer:
+    enabled: false
+    nodeType: deployer
+    replicas: 1
+    port: 10000
+    persistence:
+      enabled: true
+      size: 200Gi
+      accessModes:
+        - ReadWriteOnce
+    ingress:
+      enabled: false
+      className: nginx
+      host: deployer.dataiku.internal
+      tls:
+        enabled: true
+        secretName: dataiku-deployer-tls
+      annotations: {}
+    resources: {}
+
+  govern:
+    enabled: false
+    nodeType: govern
+    replicas: 1
+    port: 10000
+    persistence:
+      enabled: true
+      size: 200Gi
+      accessModes:
+        - ReadWriteOnce
+    ingress:
+      enabled: false
+      className: nginx
+      host: govern.dataiku.internal
+      tls:
+        enabled: true
+        secretName: dataiku-govern-tls
+      annotations: {}
+    govern:
+      postgresSecretName: dataiku-govern-postgres
+      initDb: false
+    resources: {}
+

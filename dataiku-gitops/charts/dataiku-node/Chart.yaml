@@ -1,0 +1,7 @@
+apiVersion: v2
+name: dataiku-node
+description: Reusable Dataiku node chart skeleton
+type: application
+version: 0.1.0
+appVersion: "14.x"
+

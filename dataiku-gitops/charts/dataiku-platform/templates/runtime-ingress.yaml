@@ -1,0 +1,41 @@
+{{- if .Values.components.runtime }}
+{{- range $nodeKey, $node := .Values.nodes }}
+{{- if and $node.enabled $node.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "dataiku-platform.nodeName" (dict "nodeKey" $nodeKey) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "dataiku-platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $nodeKey }}
+  annotations:
+    {{- with $node.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- if $node.ingress.className }}
+  ingressClassName: {{ $node.ingress.className | quote }}
+  {{- end }}
+  {{- if $node.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ $node.ingress.host | quote }}
+      secretName: {{ $node.ingress.tls.secretName | quote }}
+  {{- end }}
+  rules:
+    - host: {{ $node.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "dataiku-platform.nodeName" (dict "nodeKey" $nodeKey) }}
+                port:
+                  name: http
+---
+{{- end }}
+{{- end }}
+{{- end }}
+

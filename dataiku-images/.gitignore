@@ -1,0 +1,4 @@
+dataiku-dss-*.tar.gz
+*.sbom.json
+*.sarif
+

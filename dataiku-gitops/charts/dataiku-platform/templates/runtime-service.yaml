@@ -1,0 +1,29 @@
+{{- if .Values.components.runtime }}
+{{- range $nodeKey, $node := .Values.nodes }}
+{{- if $node.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "dataiku-platform.nodeName" (dict "nodeKey" $nodeKey) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "dataiku-platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $nodeKey }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: dataiku
+    app.kubernetes.io/component: {{ $nodeKey }}
+  ports:
+    {{- $basePort := int $node.port }}
+    {{- range $i := until 11 }}
+    - name: {{ ternary "http" (printf "aux-%d" $i) (eq $i 0) }}
+      port: {{ add $basePort $i }}
+      targetPort: {{ ternary "http" (printf "aux-%d" $i) (eq $i 0) }}
+      protocol: TCP
+    {{- end }}
+---
+{{- end }}
+{{- end }}
+{{- end }}
+

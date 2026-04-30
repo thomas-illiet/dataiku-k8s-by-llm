@@ -1,0 +1,24 @@
+nameOverride: dataiku-node
+image: registry.internal/dataiku/dss-runtime:14.x.y-1
+imagePullPolicy: IfNotPresent
+serviceAccountName: dataiku-dss
+nodeType: design
+replicas: 1
+port: 10000
+persistence:
+  claimName: dataiku-design-data
+builder:
+  dockerConfigSecretName: dataiku-registry-dockerconfig
+  dind:
+    enabled: true
+    image: docker:27-dind
+    privileged: true
+ingress:
+  enabled: false
+  className: nginx
+  host: dss.dataiku.internal
+  tls:
+    enabled: true
+    secretName: dataiku-dss-tls
+resources: {}
+

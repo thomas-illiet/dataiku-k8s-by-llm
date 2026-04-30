@@ -1,0 +1,25 @@
+{{- if .Values.components.prereqs }}
+{{- range $nodeKey, $node := .Values.nodes }}
+{{- if and $node.enabled $node.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "dataiku-platform.nodeClaimName" (dict "nodeKey" $nodeKey) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "dataiku-platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $nodeKey }}
+spec:
+  accessModes:
+    {{- toYaml $node.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ $node.persistence.size | quote }}
+  {{- if $.Values.global.storageClass }}
+  storageClassName: {{ $.Values.global.storageClass | quote }}
+  {{- end }}
+---
+{{- end }}
+{{- end }}
+{{- end }}
+

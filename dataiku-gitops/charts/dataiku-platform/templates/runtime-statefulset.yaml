@@ -1,0 +1,142 @@
+{{- if .Values.components.runtime }}
+{{- range $nodeKey, $node := .Values.nodes }}
+{{- if $node.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "dataiku-platform.nodeName" (dict "nodeKey" $nodeKey) }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "dataiku-platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $nodeKey }}
+spec:
+  serviceName: {{ include "dataiku-platform.nodeName" (dict "nodeKey" $nodeKey) }}
+  replicas: {{ $node.replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dataiku
+      app.kubernetes.io/component: {{ $nodeKey }}
+  template:
+    metadata:
+      labels:
+        {{- include "dataiku-platform.labels" $ | nindent 8 }}
+        app.kubernetes.io/name: dataiku
+        app.kubernetes.io/component: {{ $nodeKey }}
+    spec:
+      serviceAccountName: {{ include "dataiku-platform.serviceAccountName" $ }}
+      terminationGracePeriodSeconds: 300
+      {{- if $.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- include "dataiku-platform.imagePullSecrets" $ | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: dss
+          image: {{ $.Values.global.image | quote }}
+          imagePullPolicy: {{ $.Values.global.imagePullPolicy }}
+          env:
+            - name: DSS_VERSION
+              value: {{ $.Values.global.dssVersion | quote }}
+            - name: DSS_DATADIR
+              value: /dataiku/dss
+            - name: DSS_PORT
+              value: {{ $node.port | quote }}
+            - name: DATAIKU_NODE_TYPE
+              value: {{ $node.nodeType | quote }}
+            - name: DSS_LICENSE_FILE
+              value: /var/run/secrets/dataiku/license/license.json
+            {{- if or (eq $.Values.builder.mode "dind") $.Values.builder.remoteHost }}
+            - name: DOCKER_HOST
+              value: {{ include "dataiku-platform.dockerHost" $ | trim | quote }}
+            {{- end }}
+            {{- if eq $node.nodeType "govern" }}
+            - name: GOVERN_PSQL_JDBC_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $node.govern.postgresSecretName }}
+                  key: jdbc-url
+                  optional: true
+            - name: GOVERN_PSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $node.govern.postgresSecretName }}
+                  key: user
+                  optional: true
+            - name: GOVERN_PSQL_PASSWORD_ENCRYPTED
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $node.govern.postgresSecretName }}
+                  key: password-encrypted
+                  optional: true
+            - name: GOVERN_INIT_DB
+              value: {{ $node.govern.initDb | quote }}
+            {{- end }}
+          ports:
+            {{- $basePort := int $node.port }}
+            {{- range $i := until 11 }}
+            - name: {{ ternary "http" (printf "aux-%d" $i) (eq $i 0) }}
+              containerPort: {{ add $basePort $i }}
+              protocol: TCP
+            {{- end }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 60
+            periodSeconds: 10
+          readinessProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 6
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 12
+            periodSeconds: 20
+          volumeMounts:
+            - name: data
+              mountPath: /dataiku/dss
+            - name: dataiku-license
+              mountPath: /var/run/secrets/dataiku/license
+              readOnly: true
+            - name: docker-config
+              mountPath: /home/dataiku/.docker
+              readOnly: true
+          resources:
+            {{- toYaml $node.resources | nindent 12 }}
+        {{- if eq $.Values.builder.mode "dind" }}
+        - name: docker
+          image: {{ $.Values.builder.image | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: {{ $.Values.builder.privileged }}
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          volumeMounts:
+            - name: docker-graph
+              mountPath: /var/lib/docker
+        {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "dataiku-platform.nodeClaimName" (dict "nodeKey" $nodeKey) }}
+        - name: docker-graph
+          emptyDir: {}
+        - name: dataiku-license
+          secret:
+            secretName: dataiku-license
+            optional: true
+        - name: docker-config
+          secret:
+            secretName: {{ $.Values.builder.dockerConfigSecretName }}
+            optional: true
+            items:
+              - key: .dockerconfigjson
+                path: config.json
+---
+{{- end }}
+{{- end }}
+{{- end }}
+

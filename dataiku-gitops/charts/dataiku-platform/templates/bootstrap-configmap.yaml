@@ -1,0 +1,106 @@
+{{- if .Values.components.bootstrap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "dataiku-platform.fullname" . }}-bootstrap
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dataiku-platform.labels" . | nindent 4 }}
+data:
+  bootstrap.sh: |
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    : "${DSS_VERSION:?DSS_VERSION is required}"
+    : "${DSS_INSTALLDIR:=/opt/dataiku/dataiku-dss-${DSS_VERSION}}"
+    : "${DSS_DATADIR:=/dataiku/dss}"
+    : "${DSS_PORT:=10000}"
+    : "${DATAIKU_NODE_TYPE:=design}"
+    : "${DATAIKU_IMAGE_REGISTRY:?DATAIKU_IMAGE_REGISTRY is required}"
+
+    trap 'touch /work/bootstrap.done 2>/dev/null || true' EXIT
+
+    wait_for_docker() {
+      if [[ -z "${DOCKER_HOST:-}" ]]; then
+        return
+      fi
+      echo "Waiting for Docker daemon at ${DOCKER_HOST}"
+      for i in $(seq 1 120); do
+        if docker version >/dev/null 2>&1; then
+          return
+        fi
+        sleep 2
+      done
+      echo "Docker daemon did not become ready" >&2
+      exit 1
+    }
+
+    install_or_upgrade_datadir() {
+      local license_args=()
+      if [[ -n "${DSS_LICENSE_FILE:-}" && -s "${DSS_LICENSE_FILE}" ]]; then
+        license_args=(-l "${DSS_LICENSE_FILE}")
+      fi
+
+      local node_args=()
+      case "${DATAIKU_NODE_TYPE}" in
+        design) node_args=() ;;
+        automation|deployer|api|govern) node_args=(-t "${DATAIKU_NODE_TYPE}") ;;
+        *) echo "Unsupported DATAIKU_NODE_TYPE=${DATAIKU_NODE_TYPE}" >&2; exit 2 ;;
+      esac
+
+      if [[ ! -f "${DSS_DATADIR}/bin/env-default.sh" ]]; then
+        echo "Initializing DATA_DIR at ${DSS_DATADIR}"
+        "${DSS_INSTALLDIR}/installer.sh" "${node_args[@]}" -d "${DSS_DATADIR}" -p "${DSS_PORT}" "${license_args[@]}"
+        "${DSS_DATADIR}/bin/dssadmin" install-R-integration || true
+        "${DSS_DATADIR}/bin/dssadmin" install-graphics-export || true
+        {
+          echo "dku.registration.channel=kubernetes-helm"
+          echo "dku.exports.chrome.sandbox=false"
+        } >> "${DSS_DATADIR}/config/dip.properties"
+        return
+      fi
+
+      # shellcheck disable=SC1091
+      source "${DSS_DATADIR}/bin/env-default.sh"
+      if [[ "${BOOTSTRAP_UPGRADE:-false}" == "true" || "${DKUINSTALLDIR:-}" != "${DSS_INSTALLDIR}" ]]; then
+        echo "Upgrading DATA_DIR to ${DSS_INSTALLDIR}"
+        rm -rf "${DSS_DATADIR}/pyenv"
+        "${DSS_INSTALLDIR}/installer.sh" -d "${DSS_DATADIR}" -u -y "${license_args[@]}"
+        "${DSS_DATADIR}/bin/dssadmin" install-R-integration || true
+        "${DSS_DATADIR}/bin/dssadmin" install-graphics-export || true
+      else
+        echo "DATA_DIR already initialized for ${DSS_INSTALLDIR}; skipping upgrade"
+      fi
+    }
+
+    build_and_push_image() {
+      local type="$1"
+      local repo="$2"
+      local tag="${DATAIKU_IMAGE_REGISTRY}/${repo}:${DSS_VERSION}"
+
+      echo "Building ${type} image as ${tag}"
+      "${DSS_DATADIR}/bin/dssadmin" build-base-image --type "${type}" --tag "${tag}"
+      docker push "${tag}"
+    }
+
+    wait_for_docker
+    install_or_upgrade_datadir
+
+    if [[ "${BUILD_CONTAINER_EXEC:-false}" == "true" ]]; then
+      build_and_push_image "container-exec" "${CONTAINER_EXEC_REPO}"
+    fi
+    if [[ "${BUILD_SPARK:-false}" == "true" ]]; then
+      build_and_push_image "spark" "${SPARK_REPO}"
+    fi
+    if [[ "${BUILD_CDE:-false}" == "true" ]]; then
+      build_and_push_image "cde" "${CDE_REPO}"
+    fi
+    if [[ "${BUILD_API_DEPLOYER:-false}" == "true" ]]; then
+      build_and_push_image "api-deployer" "${API_DEPLOYER_REPO}"
+    fi
+
+    mkdir -p "${DSS_DATADIR}/.dataiku-k8s"
+    echo "${DSS_VERSION}" > "${DSS_DATADIR}/.dataiku-k8s/bootstrap-version"
+    echo "Bootstrap complete"
+{{- end }}
+

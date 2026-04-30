@@ -1,0 +1,92 @@
+ARG BASE_IMAGE=almalinux:9
+FROM ${BASE_IMAGE}
+
+ARG DSS_VERSION
+ARG KUBECTL_VERSION=v1.30.8
+ARG DSS_KIT=dataiku-dss-${DSS_VERSION}.tar.gz
+
+ENV DSS_VERSION="${DSS_VERSION}" \
+    DSS_INSTALLDIR="/opt/dataiku/dataiku-dss-${DSS_VERSION}" \
+    DSS_DATADIR="/dataiku/dss" \
+    DSS_PORT="10000" \
+    DATAIKU_NODE_TYPE="design" \
+    LANG="en_US.UTF-8" \
+    LC_ALL="en_US.UTF-8"
+
+RUN test -n "${DSS_VERSION}"
+
+RUN dnf -y install dnf-plugins-core epel-release \
+    && dnf -y update \
+    && dnf -y install \
+      acl \
+      alsa-lib \
+      curl \
+      expat \
+      file \
+      findutils \
+      freetype \
+      git \
+      glibc-langpack-en \
+      gtk3 \
+      gzip \
+      java-17-openjdk-headless \
+      jq \
+      libcurl-devel \
+      libgfortran \
+      libgomp \
+      libicu-devel \
+      libX11-xcb \
+      libxml2-devel \
+      mesa-libgbm \
+      ncurses-compat-libs \
+      nginx \
+      nodejs \
+      npm \
+      nss \
+      openssl \
+      openssl-devel \
+      procps-ng \
+      python3 \
+      python3-devel \
+      shadow-utils \
+      tar \
+      unzip \
+      which \
+      xz \
+      zip \
+      R-core-devel \
+    && dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo \
+    && dnf -y install docker-ce-cli \
+    && dnf clean all
+
+RUN curl -fsSL -o /usr/local/bin/kubectl \
+      "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" \
+    && chmod 0755 /usr/local/bin/kubectl
+
+RUN groupadd -g 1000 dataiku \
+    && useradd -u 1000 -g 1000 -m -d /home/dataiku dataiku \
+    && mkdir -p /opt/dataiku /dataiku/dss /opt/dataiku/assets \
+    && chown -R dataiku:dataiku /opt/dataiku /dataiku /home/dataiku
+
+COPY assets/ /opt/dataiku/assets/
+COPY ${DSS_KIT} /tmp/dataiku-dss.tar.gz
+
+RUN tar -xzf /tmp/dataiku-dss.tar.gz -C /opt/dataiku \
+    && rm -f /tmp/dataiku-dss.tar.gz \
+    && test -d "${DSS_INSTALLDIR}" \
+    && "${DSS_INSTALLDIR}/scripts/install/installdir-postinstall.sh" "${DSS_INSTALLDIR}" \
+    && if find /opt/dataiku/assets/ca -type f -name '*.crt' -print -quit 2>/dev/null | grep -q .; then \
+         cp /opt/dataiku/assets/ca/*.crt /etc/pki/ca-trust/source/anchors/ && update-ca-trust; \
+       fi \
+    && chown -R dataiku:dataiku /opt/dataiku /dataiku /home/dataiku
+
+COPY entrypoint.sh /opt/dataiku/entrypoint.sh
+RUN chmod 0755 /opt/dataiku/entrypoint.sh
+
+USER dataiku
+WORKDIR /home/dataiku
+
+EXPOSE 10000 10001 10002 10003 10004 10005 10006 10007 10008 10009 10010
+
+ENTRYPOINT ["/opt/dataiku/entrypoint.sh"]
+

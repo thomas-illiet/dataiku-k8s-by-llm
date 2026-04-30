@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dataiku-runtime
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "30"
+  labels:
+    app.kubernetes.io/part-of: dataiku
+spec:
+  project: dataiku
+  sources:
+    - repoURL: https://git.example.com/platform/dataiku-gitops.git
+      targetRevision: main
+      path: charts/dataiku-platform
+      helm:
+        releaseName: dataiku-runtime
+        valueFiles:
+          - $values/envs/onprem/prod/values.yaml
+        parameters:
+          - name: components.prereqs
+            value: "false"
+          - name: components.bootstrap
+            value: "false"
+          - name: components.runtime
+            value: "true"
+    - repoURL: https://git.example.com/platform/dataiku-gitops.git
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dataiku
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

@@ -1,0 +1,135 @@
+{{- if .Values.components.bootstrap }}
+{{- $nodeKey := .Values.bootstrap.nodeName -}}
+{{- $node := index .Values.nodes $nodeKey -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "dataiku-platform.fullname" . }}-bootstrap-{{ .Values.global.dssVersion | replace "." "-" }}-{{ .Values.global.buildRev | replace "." "-" }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "dataiku-platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bootstrap
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: {{ .Values.bootstrap.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.bootstrap.ttlSecondsAfterFinished }}
+  activeDeadlineSeconds: {{ .Values.bootstrap.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "dataiku-platform.labels" . | nindent 8 }}
+        app.kubernetes.io/component: bootstrap
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "dataiku-platform.serviceAccountName" . }}
+      {{- if .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- include "dataiku-platform.imagePullSecrets" . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1000
+      containers:
+        - name: bootstrap
+          image: {{ .Values.global.image | quote }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          command: ["/bin/bash", "/bootstrap/bootstrap.sh"]
+          env:
+            - name: DSS_VERSION
+              value: {{ .Values.global.dssVersion | quote }}
+            - name: DSS_DATADIR
+              value: /dataiku/dss
+            - name: DSS_PORT
+              value: {{ $node.port | quote }}
+            - name: DATAIKU_NODE_TYPE
+              value: {{ $node.nodeType | quote }}
+            - name: DATAIKU_IMAGE_REGISTRY
+              value: {{ .Values.global.registry | quote }}
+            - name: DSS_LICENSE_FILE
+              value: /var/run/secrets/dataiku/license/license.json
+            - name: BOOTSTRAP_UPGRADE
+              value: {{ .Values.bootstrap.upgrade | quote }}
+            - name: BUILD_CONTAINER_EXEC
+              value: {{ .Values.bootstrap.buildImages.containerExec | quote }}
+            - name: BUILD_SPARK
+              value: {{ .Values.bootstrap.buildImages.spark | quote }}
+            - name: BUILD_CDE
+              value: {{ .Values.bootstrap.buildImages.cde | quote }}
+            - name: BUILD_API_DEPLOYER
+              value: {{ .Values.bootstrap.buildImages.apiDeployer | quote }}
+            - name: CONTAINER_EXEC_REPO
+              value: {{ .Values.bootstrap.imageTags.containerExec | quote }}
+            - name: SPARK_REPO
+              value: {{ .Values.bootstrap.imageTags.spark | quote }}
+            - name: CDE_REPO
+              value: {{ .Values.bootstrap.imageTags.cde | quote }}
+            - name: API_DEPLOYER_REPO
+              value: {{ .Values.bootstrap.imageTags.apiDeployer | quote }}
+            {{- if or (eq .Values.builder.mode "dind") .Values.builder.remoteHost }}
+            - name: DOCKER_HOST
+              value: {{ include "dataiku-platform.dockerHost" . | trim | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: data
+              mountPath: /dataiku/dss
+            - name: bootstrap-script
+              mountPath: /bootstrap
+            - name: work
+              mountPath: /work
+            - name: dataiku-license
+              mountPath: /var/run/secrets/dataiku/license
+              readOnly: true
+            - name: docker-config
+              mountPath: /home/dataiku/.docker
+              readOnly: true
+          resources:
+            {{- toYaml .Values.bootstrap.resources | nindent 12 }}
+        {{- if eq .Values.builder.mode "dind" }}
+        - name: docker
+          image: {{ .Values.builder.image | quote }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            privileged: {{ .Values.builder.privileged }}
+          env:
+            - name: DOCKER_TLS_CERTDIR
+              value: ""
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              dockerd-entrypoint.sh &
+              pid="$!"
+              until [ -f /work/bootstrap.done ]; do sleep 2; done
+              kill "$pid"
+              wait "$pid" || true
+          volumeMounts:
+            - name: work
+              mountPath: /work
+            - name: docker-graph
+              mountPath: /var/lib/docker
+        {{- end }}
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "dataiku-platform.nodeClaimName" (dict "nodeKey" $nodeKey) }}
+        - name: bootstrap-script
+          configMap:
+            name: {{ include "dataiku-platform.fullname" . }}-bootstrap
+            defaultMode: 0755
+        - name: work
+          emptyDir: {}
+        - name: docker-graph
+          emptyDir: {}
+        - name: dataiku-license
+          secret:
+            secretName: dataiku-license
+            optional: true
+        - name: docker-config
+          secret:
+            secretName: {{ .Values.builder.dockerConfigSecretName }}
+            optional: true
+            items:
+              - key: .dockerconfigjson
+                path: config.json
+{{- end }}
+
